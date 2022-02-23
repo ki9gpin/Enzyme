@@ -1755,7 +1755,7 @@ FunctionType *getFunctionTypeForClone(
     llvm::FunctionType *FTy, DerivativeMode mode, unsigned width,
     llvm::Type *additionalArg, const std::vector<DIFFE_TYPE> &constant_args,
     bool diffeReturnArg, ReturnType returnValue, DIFFE_TYPE returnType) {
-    SmallVector<Type *> RetTypes;
+  SmallVector<Type *> RetTypes;
   if (returnValue == ReturnType::ArgsWithReturn ||
       returnValue == ReturnType::Return) {
     if (returnType != DIFFE_TYPE::CONSTANT) {

@@ -769,7 +769,7 @@ AllocaInst *CacheUtility::createCacheForScope(LimitContext ctx, Type *T,
   // This is stored from innner-most chunk to outermost
   // Thus it begins with the underlying type, and adds pointers
   // to the previous type.
-  SmallVector<Type*> types = {T};
+  SmallVector<Type *> types = {T};
   bool isi1 = T->isIntegerTy() && cast<IntegerType>(T)->getBitWidth() == 1;
   if (EfficientBoolCache && isi1 && sublimits.size() != 0)
     types[0] = Type::getInt8Ty(T->getContext());

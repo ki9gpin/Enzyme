@@ -534,8 +534,8 @@ llvm::Value *getOrInsertOpFloatSum(llvm::Module &M, llvm::Type *OpPtr,
   }
 
   llvm::Type *types[] = {PointerType::getUnqual(FlT),
-                                     PointerType::getUnqual(FlT),
-                                     PointerType::getUnqual(intType), OpPtr};
+                         PointerType::getUnqual(FlT),
+                         PointerType::getUnqual(intType), OpPtr};
   FunctionType *FuT =
       FunctionType::get(Type::getVoidTy(M.getContext()), types, false);
 
@@ -619,8 +619,7 @@ llvm::Value *getOrInsertOpFloatSum(llvm::Module &M, llvm::Type *OpPtr,
     B.CreateRetVoid();
   }
 
-  llvm::Type *rtypes[] = {Type::getInt8PtrTy(M.getContext()),
-                                      intType, OpPtr};
+  llvm::Type *rtypes[] = {Type::getInt8PtrTy(M.getContext()), intType, OpPtr};
   FunctionType *RFT = FunctionType::get(intType, rtypes, false);
 
   Constant *RF = M.getNamedValue("MPI_Op_create");
@@ -736,16 +735,16 @@ Function *getOrInsertExponentialAllocator(Module &M, bool ZeroInit) {
   auto popCnt = Intrinsic::getDeclaration(&M, Intrinsic::ctpop, {types[1]});
 
   B.CreateCondBr(
-      B.CreateAnd(
-          B.CreateICmpULT(B.CreateCall(popCnt, {size}),
-                          ConstantInt::get(types[1], 3, false)),
-          hasOne),
+      B.CreateAnd(B.CreateICmpULT(B.CreateCall(popCnt, {size}),
+                                  ConstantInt::get(types[1], 3, false)),
+                  hasOne),
       grow, ok);
 
   B.SetInsertPoint(grow);
 
-  auto lz = B.CreateCall(
-      Intrinsic::getDeclaration(&M, Intrinsic::ctlz, {types[1]}), {size, ConstantInt::getTrue(M.getContext())});
+  auto lz =
+      B.CreateCall(Intrinsic::getDeclaration(&M, Intrinsic::ctlz, {types[1]}),
+                   {size, ConstantInt::getTrue(M.getContext())});
   Value *next =
       B.CreateShl(tsize, B.CreateSub(ConstantInt::get(types[1], 64, false), lz,
                                      "", true, true));
