@@ -3999,8 +3999,8 @@ public:
     SmallVector<Value *, 8> pre_args = {0, 0, 0};
     std::vector<DIFFE_TYPE> argsInverted = {DIFFE_TYPE::CONSTANT,
                                             DIFFE_TYPE::CONSTANT};
-    std::vector<Instruction *> postCreate;
-    std::vector<Instruction *> userReplace;
+    SmallVector<Instruction *> postCreate;
+    SmallVector<Instruction *> userReplace;
 
     SmallVector<Value *, 0> OutTypes;
     SmallVector<Type *, 0> OutFPTypes;
@@ -4365,7 +4365,7 @@ public:
             tape = cast<LoadInst>(u);
           }
           assert(tape);
-          std::vector<Value *> extracts;
+          SmallVector<Value *> extracts;
           if (subdata->tapeIndices.size() == 1) {
             assert(subdata->tapeIndices.begin()->second == -1);
             extracts.push_back(tape);
@@ -4374,7 +4374,7 @@ public:
               extracts.push_back(a);
             }
           }
-          std::vector<LoadInst *> geps;
+          SmallVector<LoadInst *> geps;
           for (auto E : extracts) {
             AllocaInst *AI = nullptr;
             for (auto U : E->users()) {
@@ -10102,8 +10102,8 @@ public:
     SmallVector<Value *, 8> args;
     SmallVector<Value *, 8> pre_args;
     std::vector<DIFFE_TYPE> argsInverted;
-    std::vector<Instruction *> postCreate;
-    std::vector<Instruction *> userReplace;
+    SmallVector<Instruction *> postCreate;
+    SmallVector<Instruction *> userReplace;
     std::map<int, Type *> preByVal;
     std::map<int, Type *> gradByVal;
 

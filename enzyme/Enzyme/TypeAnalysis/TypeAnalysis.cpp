@@ -1495,10 +1495,10 @@ void TypeAnalyzer::visitPHINode(PHINode &phi) {
     vals.push_back(op);
   }
 
-  std::vector<BinaryOperator *> bos;
+  SmallVector<BinaryOperator *> bos;
 
   // Unique values that propagate into this phi
-  std::vector<Value *> UniqueValues;
+  SmallVector<Value *> UniqueValues;
 
   while (vals.size()) {
     Value *todo = vals.front();
@@ -2042,7 +2042,7 @@ void TypeAnalyzer::visitShuffleVectorInst(ShuffleVectorInst &I) {
 
 void TypeAnalyzer::visitExtractValueInst(ExtractValueInst &I) {
   auto &dl = fntypeinfo.Function->getParent()->getDataLayout();
-  std::vector<Value *> vec;
+  SmallVector<Value *> vec;
   vec.push_back(ConstantInt::get(Type::getInt64Ty(I.getContext()), 0));
   for (auto ind : I.indices()) {
     vec.push_back(ConstantInt::get(Type::getInt32Ty(I.getContext()), ind));
@@ -2075,8 +2075,7 @@ void TypeAnalyzer::visitExtractValueInst(ExtractValueInst &I) {
 
 void TypeAnalyzer::visitInsertValueInst(InsertValueInst &I) {
   auto &dl = fntypeinfo.Function->getParent()->getDataLayout();
-  std::vector<Value *> vec;
-  vec.push_back(ConstantInt::get(Type::getInt64Ty(I.getContext()), 0));
+  SmallVector<Value *> vec = { ConstantInt::get(Type::getInt64Ty(I.getContext()), 0) };
   for (auto ind : I.indices()) {
     vec.push_back(ConstantInt::get(Type::getInt32Ty(I.getContext()), ind));
   }
@@ -3337,7 +3336,7 @@ void TypeAnalyzer::visitInvokeInst(InvokeInst &call) {
   TypeTree Result;
 
   IRBuilder<> B(&call);
-  std::vector<Value *> args;
+  SmallVector<Value *> args;
 #if LLVM_VERSION_MAJOR >= 14
   for (auto &val : call.args())
 #else

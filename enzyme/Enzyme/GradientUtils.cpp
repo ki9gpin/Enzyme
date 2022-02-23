@@ -728,7 +728,7 @@ Value *GradientUtils::unwrapM(Value *const val, IRBuilder<> &BuilderM,
     if (!legalMove)
       goto endCheck;
 
-    std::vector<Value *> args;
+    SmallVector<Value *> args;
 #if LLVM_VERSION_MAJOR >= 14
     for (unsigned i = 0; i < op->arg_size(); ++i)
 #else
@@ -1988,7 +1988,7 @@ Value *GradientUtils::cacheForReverse(IRBuilder<> &BuilderQ, Value *malloc,
             erase(stores[i]);
           }
 
-          std::vector<User *> users;
+          SmallVector<User *> users;
           for (auto u : found->first->users()) {
             users.push_back(u);
           }
@@ -2112,7 +2112,7 @@ Value *GradientUtils::cacheForReverse(IRBuilder<> &BuilderQ, Value *malloc,
           }
 
           // uses of the alloc
-          std::vector<User *> users;
+          SmallVector<User *> users;
           for (auto u : found->first->users()) {
             users.push_back(u);
           }
@@ -5345,7 +5345,7 @@ Value *GradientUtils::lookupM(Value *val, IRBuilder<> &BuilderM,
               lim = v.CreateAdd(lim, ConstantInt::get(lim->getType(), 1), "",
                                 true, true);
 
-              std::vector<Instruction *> toErase;
+              SmallVector<Instruction *> toErase;
               {
 #if LLVM_VERSION_MAJOR >= 12
                 SCEVExpander Exp(SE,
@@ -6114,7 +6114,7 @@ nofast:;
   assert(reverseBlocks.size());
   LimitContext lctx(/*ReverseLimit*/ reverseBlocks.size() > 0, ctx);
   AllocaInst *cache = createCacheForScope(lctx, T, "", /*shouldFree*/ true);
-  std::vector<BasicBlock *> targets;
+  SmallVector<BasicBlock *> targets;
   {
     size_t idx = 0;
     std::map<BasicBlock * /*storingblock*/,

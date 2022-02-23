@@ -408,7 +408,7 @@ llvm::Function *getOrInsertDifferentialWaitallSave(llvm::Module &M,
 llvm::Function *getOrInsertDifferentialMPI_Wait(llvm::Module &M,
                                                 ArrayRef<llvm::Type *> T,
                                                 Type *reqType) {
-  std::vector<llvm::Type *> types(T.begin(), T.end());
+  llvm::SmallVector<llvm::Type *> types(T.begin(), T.end());
   types.push_back(reqType);
   std::string name = "__enzyme_differential_mpi_wait";
   FunctionType *FT =

@@ -184,7 +184,7 @@ public:
   ValueMap<PHINode *, WeakTrackingVH> fictiousPHIs;
   ValueToValueMapTy originalToNewFn;
   ValueToValueMapTy newToOriginalFn;
-  std::vector<CallInst *> originalCalls;
+  SmallVector<CallInst *> originalCalls;
 
   SmallPtrSet<Instruction *, 4> unnecessaryIntermediates;
 

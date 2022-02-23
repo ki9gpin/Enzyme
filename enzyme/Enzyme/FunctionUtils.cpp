@@ -271,7 +271,7 @@ static inline bool OnlyUsedInOMP(AllocaInst *AI) {
 /// therefore may not be reachable in the reverse pass) must be upgraded.
 static inline void UpgradeAllocasToMallocs(Function *NewF,
                                            DerivativeMode mode) {
-  std::vector<AllocaInst *> ToConvert;
+  SmallVector<AllocaInst *> ToConvert;
 
   for (auto &BB : *NewF) {
     for (auto &I : BB) {
@@ -562,7 +562,7 @@ void PreProcessCache::ReplaceReallocs(Function *NewF, bool mem2reg) {
     FAM.invalidate(*NewF, PA);
   }
 
-  std::vector<CallInst *> ToConvert;
+  SmallVector<CallInst *> ToConvert;
   std::map<CallInst *, Value *> reallocSizes;
   IntegerType *T = nullptr;
 
@@ -581,7 +581,7 @@ void PreProcessCache::ReplaceReallocs(Function *NewF, bool mem2reg) {
     }
   }
 
-  std::vector<AllocaInst *> memoryLocations;
+  SmallVector<AllocaInst *> memoryLocations;
 
   for (auto CI : ToConvert) {
     assert(T);
@@ -1122,7 +1122,7 @@ Function *PreProcessCache::preprocessForClone(Function *F,
   }
 
   {
-    std::vector<CallInst *> ItersToErase;
+    SmallVector<CallInst *> ItersToErase;
     for (auto &BB : *NewF) {
       for (auto &I : BB) {
 
@@ -1194,8 +1194,8 @@ Function *PreProcessCache::preprocessForClone(Function *F,
   SimplifyMPIQueries(*NewF, FAM);
 
   if (EnzymeLowerGlobals) {
-    std::vector<CallInst *> Calls;
-    std::vector<ReturnInst *> Returns;
+    SmallVector<CallInst *> Calls;
+    SmallVector<ReturnInst *> Returns;
     for (BasicBlock &BB : *NewF) {
       for (Instruction &I : BB) {
         if (auto CI = dyn_cast<CallInst>(&I)) {
@@ -1568,7 +1568,7 @@ Function *PreProcessCache::preprocessForClone(Function *F,
   }
 
   {
-    std::vector<Instruction *> ToErase;
+    SmallVector<Instruction *> ToErase;
     for (auto &BB : *NewF) {
       for (auto &I : BB) {
         if (auto MTI = dyn_cast<MemTransferInst>(&I)) {
@@ -1755,7 +1755,7 @@ FunctionType *getFunctionTypeForClone(
     llvm::FunctionType *FTy, DerivativeMode mode, unsigned width,
     llvm::Type *additionalArg, const std::vector<DIFFE_TYPE> &constant_args,
     bool diffeReturnArg, ReturnType returnValue, DIFFE_TYPE returnType) {
-  std::vector<Type *> RetTypes;
+    SmallVector<Type *> RetTypes;
   if (returnValue == ReturnType::ArgsWithReturn ||
       returnValue == ReturnType::Return) {
     if (returnType != DIFFE_TYPE::CONSTANT) {
@@ -1774,7 +1774,7 @@ FunctionType *getFunctionTypeForClone(
       RetTypes.push_back(FTy->getReturnType());
     }
   }
-  std::vector<Type *> ArgTypes;
+  SmallVector<Type *> ArgTypes;
 
   // The user might be deleting arguments to the function by specifying them in
   // the VMap.  If so, we need to not add the arguments to the arg ty vector

@@ -1700,7 +1700,7 @@ public:
       handleKnownFunctions(F);
       if (F.empty())
         continue;
-      std::vector<Instruction *> toErase;
+      SmallVector<Instruction *> toErase;
       for (BasicBlock &BB : F) {
         for (Instruction &I : BB) {
           if (auto CI = dyn_cast<CallInst>(&I)) {
@@ -1775,7 +1775,7 @@ public:
       }
     }
 
-    std::vector<CallInst *> toErase;
+    SmallVector<CallInst *> toErase;
     for (Function &F : M) {
       if (F.empty())
         continue;
