@@ -35,7 +35,7 @@ void dlstm_objective(int l, int c, int b, double const *main_params,
                      double *dextra_params, double *state,
                      double const *sequence, double *loss, double *dloss);
 
-void lstm_objective_b(int l, int c, int b, const double *main_params,
+void lstm_objective_d(int l, int c, int b, const double *main_params,
                       double *main_paramsb, const double *extra_params,
                       double *extra_paramsb, double *state,
                       const double *sequence, double *loss, double *lossb);
@@ -119,20 +119,29 @@ template <deriv_t deriv>
 void calculate_jacobian(struct LSTMInput &input, struct LSTMOutput &result) {
   for (int i = 0; i < 100; i++) {
 
-    double *main_params_gradient_part = result.gradient.data();
+    std::vector<double> dparams(input.main_params.size() +
+                                input.extra_params.size());
+    double *main_params_gradient_part = dparams.data();
     double *extra_params_gradient_part =
-        result.gradient.data() + input.main_params.size();
+        dparams.data() + input.main_params.size();
 
-    double loss = 0.0; // stores fictive result
-                       // (Tapenade doesn't calculate an original function in
-                       // reverse mode)
+    for (unsigned n = 0;
+         n < input.main_params.size() + input.extra_params.size(); ++n) {
+      dparams[n] = 1.0;
 
-    double lossb = 1.0; // stores dY
-                        // (equals to 1.0 for gradient calculation)
-    deriv(input.l, input.c, input.b, input.main_params.data(),
-          main_params_gradient_part, input.extra_params.data(),
-          extra_params_gradient_part, input.state.data(), input.sequence.data(),
-          &loss, &lossb);
+      double loss = 0.0; // stores fictive result
+                         // (Tapenade doesn't calculate an original function in
+                         // reverse mode)
+
+      double *lossb = result.gradient.data() + n;
+
+      deriv(input.l, input.c, input.b, input.main_params.data(),
+            main_params_gradient_part, input.extra_params.data(),
+            extra_params_gradient_part, input.state.data(),
+            input.sequence.data(), &loss, lossb);
+
+      dparams[n] = 0.0;
+    }
   }
 }
 
@@ -165,7 +174,7 @@ int main(const int argc, const char *argv[]) {
       {
         struct timeval start, end;
         gettimeofday(&start, NULL);
-        calculate_jacobian<lstm_objective_b>(input, result);
+        calculate_jacobian<lstm_objective_d>(input, result);
         gettimeofday(&end, NULL);
         printf("Tapenade combined %0.6f\n", tdiff(&start, &end));
         for (unsigned i = result.gradient.size() - 5;
