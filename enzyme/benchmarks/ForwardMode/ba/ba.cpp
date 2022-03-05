@@ -211,71 +211,48 @@ void dcompute_zach_weight_error(double const *w, double *dw, double *err,
 //! Tapenade
 extern "C" {
 
-#include <adBuffer.h>
-
 /*
-  Differentiation of sqsum in reverse (adjoint) mode:
-   gradient     of useful results: *x sqsum
+  Differentiation of sqsum in forward (tangent) mode:
+   variations   of useful results: sqsum
    with respect to varying inputs: *x
    Plus diff mem management of: x:in
 
  =====================================================================
                                 UTILS
  ===================================================================== */
-void sqsum_b(int n, const double *x, double *xb, double sqsumb) {
+double sqsum_d(int n, const double *x, const double *xd, double *sqsum) {
   int i;
   double res = 0;
-  double resb = 0.0;
-  double sqsum;
-  resb = sqsumb;
-  for (i = n - 1; i > -1; --i)
-    xb[i] = xb[i] + 2 * x[i] * resb;
-}
-
-/* =====================================================================
-                                UTILS
- ===================================================================== */
-double sqsum_nodiff(int n, const double *x) {
-  int i;
-  double res = 0;
-  for (i = 0; i < n; ++i)
+  double resd;
+  resd = 0.0;
+  for (i = 0; i < n; ++i) {
+    resd = resd + 2 * x[i] * xd[i];
     res = res + x[i] * x[i];
-  return res;
+  }
+  *sqsum = res;
+  return resd;
 }
 
 /*
-  Differentiation of cross in reverse (adjoint) mode:
-   gradient     of useful results: *out *a *b
+  Differentiation of cross in forward (tangent) mode:
+   variations   of useful results: *out
    with respect to varying inputs: *a *b
    Plus diff mem management of: out:in a:in b:in
 */
-void cross_b(const double *a, double *ab, const double *b, double *bb,
-             double *out, double *outb) {
-  ab[0] = ab[0] + b[1] * outb[2];
-  bb[1] = bb[1] + a[0] * outb[2];
-  ab[1] = ab[1] - b[0] * outb[2];
-  bb[0] = bb[0] - a[1] * outb[2];
-  outb[2] = 0.0;
-  ab[2] = ab[2] + b[0] * outb[1];
-  bb[0] = bb[0] + a[2] * outb[1];
-  ab[0] = ab[0] - b[2] * outb[1];
-  bb[2] = bb[2] - a[0] * outb[1];
-  outb[1] = 0.0;
-  ab[1] = ab[1] + b[2] * outb[0];
-  bb[2] = bb[2] + a[1] * outb[0];
-  ab[2] = ab[2] - b[1] * outb[0];
-  bb[1] = bb[1] - a[2] * outb[0];
-}
-
-void cross_nodiff(const double *a, const double *b, double *out) {
+void cross_d(const double *a, const double *ad, const double *b,
+             const double *bd, double *out, double *outd) {
+  *outd = 0.0;
+  outd[0] = b[2] * ad[1] + a[1] * bd[2] - b[1] * ad[2] - a[2] * bd[1];
   out[0] = a[1] * b[2] - a[2] * b[1];
+  outd[1] = b[0] * ad[2] + a[2] * bd[0] - b[2] * ad[0] - a[0] * bd[2];
   out[1] = a[2] * b[0] - a[0] * b[2];
+  outd[2] = b[1] * ad[0] + a[0] * bd[1] - b[0] * ad[1] - a[1] * bd[0];
   out[2] = a[0] * b[1] - a[1] * b[0];
 }
 
 /*
-  Differentiation of rodrigues_rotate_point in reverse (adjoint) mode:
-   gradient     of useful results: *rot *rotatedPt
+  Differentiation of rodrigues_rotate_point in forward (tangent) mode:
+   variations   of useful results: *rotatedPt
    with respect to varying inputs: *rot *pt
    Plus diff mem management of: rot:in rotatedPt:in pt:in
 
@@ -292,236 +269,127 @@ void cross_nodiff(const double *a, const double *b, double *out) {
 //  n = w / theta;
 //  n_x = au_cross_matrix(n);
 //  R = eye(3) + n_x*sin(theta) + n_x*n_x*(1 - cos(theta));
-void rodrigues_rotate_point_b(const double *rot, double *rotb, const double *pt,
-                              double *ptb, double *rotatedPt,
-                              double *rotatedPtb) {
+void rodrigues_rotate_point_d(const double *__restrict rot,
+                              const double *__restrict rotd,
+                              const double *__restrict pt,
+                              const double *__restrict ptd,
+                              double *__restrict rotatedPt,
+                              double *__restrict rotatedPtd) {
   int i;
   double sqtheta;
-  double sqthetab;
-  int ii1;
-  sqtheta = sqsum_nodiff(3, rot);
+  double sqthetad;
+  sqthetad = sqsum_d(3, rot, rotd, &sqtheta);
   if (sqtheta != 0) {
     double theta, costheta, sintheta, theta_inverse;
+    double thetad, costhetad, sinthetad, theta_inversed;
     double w[3], w_cross_pt[3], tmp;
-    double tempb;
-    theta = sqrt(sqtheta);
+    double wd[3], w_cross_ptd[3], tmpd;
+    double temp;
+    int ii1;
+    temp = sqrt(sqtheta);
+    thetad = (sqtheta == 0.0 ? 0.0 : sqthetad / (2.0 * temp));
+    theta = temp;
+    costhetad = -(sin(theta) * thetad);
     costheta = cos(theta);
+    sinthetad = cos(theta) * thetad;
     sintheta = sin(theta);
+    theta_inversed = -(thetad / (theta * theta));
     theta_inverse = 1.0 / theta;
-    double thetab, costhetab, sinthetab, theta_inverseb;
-    double wb[3], w_cross_ptb[3], tmpb;
-    for (i = 0; i < 3; ++i)
-      w[i] = rot[i] * theta_inverse;
-    cross_nodiff(w, pt, w_cross_pt);
-    tmp = (w[0] * pt[0] + w[1] * pt[1] + w[2] * pt[2]) * (1. - costheta);
-    for (i = 0; i < 3; i++) /* TFIX */
-      ptb[i] = 0.0;
     for (ii1 = 0; ii1 < 3; ++ii1)
-      w_cross_ptb[ii1] = 0.0;
-    for (ii1 = 0; ii1 < 3; ++ii1)
-      wb[ii1] = 0.0;
-    costhetab = 0.0;
-    tmpb = 0.0;
-    sinthetab = 0.0;
-    for (i = 2; i > -1; --i) {
-      ptb[i] = ptb[i] + costheta * rotatedPtb[i];
-      costhetab = costhetab + pt[i] * rotatedPtb[i];
-      w_cross_ptb[i] = w_cross_ptb[i] + sintheta * rotatedPtb[i];
-      sinthetab = sinthetab + w_cross_pt[i] * rotatedPtb[i];
-      wb[i] = wb[i] + tmp * rotatedPtb[i];
-      tmpb = tmpb + w[i] * rotatedPtb[i];
-      rotatedPtb[i] = 0.0;
-    }
-    tempb = (1. - costheta) * tmpb;
-    wb[0] = wb[0] + pt[0] * tempb;
-    ptb[0] = ptb[0] + w[0] * tempb;
-    wb[1] = wb[1] + pt[1] * tempb;
-    ptb[1] = ptb[1] + w[1] * tempb;
-    wb[2] = wb[2] + pt[2] * tempb;
-    ptb[2] = ptb[2] + w[2] * tempb;
-    costhetab = costhetab - (w[0] * pt[0] + w[1] * pt[1] + w[2] * pt[2]) * tmpb;
-    cross_b(w, wb, pt, ptb, w_cross_pt, w_cross_ptb);
-    theta_inverseb = 0.0;
-    for (i = 2; i > -1; --i) {
-      rotb[i] = rotb[i] + theta_inverse * wb[i];
-      theta_inverseb = theta_inverseb + rot[i] * wb[i];
-      wb[i] = 0.0;
-    }
-    thetab = cos(theta) * sinthetab - sin(theta) * costhetab -
-             theta_inverseb / (theta * theta);
-    if (sqtheta == 0.0)
-      sqthetab = 0.0;
-    else
-      sqthetab = thetab / (2.0 * sqrt(sqtheta));
-  } else {
-    {
-      double rot_cross_pt[3];
-      double rot_cross_ptb[3];
-      for (i = 0; i < 3; i++) /* TFIX */
-        ptb[i] = 0.0;
-      for (ii1 = 0; ii1 < 3; ++ii1)
-        rot_cross_ptb[ii1] = 0.0;
-      for (i = 2; i > -1; --i) {
-        ptb[i] = ptb[i] + rotatedPtb[i];
-        rot_cross_ptb[i] = rot_cross_ptb[i] + rotatedPtb[i];
-        rotatedPtb[i] = 0.0;
-      }
-      cross_b(rot, rotb, pt, ptb, rot_cross_pt, rot_cross_ptb);
-    }
-    sqthetab = 0.0;
-  }
-  sqsum_b(3, rot, rotb, sqthetab);
-}
-
-/* =====================================================================
-                               MAIN LOGIC
- ===================================================================== */
-// rot: 3 rotation parameters
-// pt: 3 point to be rotated
-// rotatedPt: 3 rotated point
-// this is an efficient evaluation (part of
-// the Ceres implementation)
-// easy to understand calculation in matlab:
-//  theta = sqrt(sum(w. ^ 2));
-//  n = w / theta;
-//  n_x = au_cross_matrix(n);
-//  R = eye(3) + n_x*sin(theta) + n_x*n_x*(1 - cos(theta));
-void rodrigues_rotate_point_nodiff(const double *rot, const double *pt,
-                                   double *rotatedPt) {
-  int i;
-  double sqtheta;
-  sqtheta = sqsum_nodiff(3, rot);
-  if (sqtheta != 0) {
-    double theta, costheta, sintheta, theta_inverse;
-    double w[3], w_cross_pt[3], tmp;
-    theta = sqrt(sqtheta);
-    costheta = cos(theta);
-    sintheta = sin(theta);
-    theta_inverse = 1.0 / theta;
-    for (i = 0; i < 3; ++i)
+      wd[ii1] = 0.0;
+    for (i = 0; i < 3; ++i) {
+      wd[i] = theta_inverse * rotd[i] + rot[i] * theta_inversed;
       w[i] = rot[i] * theta_inverse;
-    cross_nodiff(w, pt, w_cross_pt);
-    tmp = (w[0] * pt[0] + w[1] * pt[1] + w[2] * pt[2]) * (1. - costheta);
-    for (i = 0; i < 3; ++i)
+    }
+    cross_d(w, wd, pt, ptd, w_cross_pt, w_cross_ptd);
+    temp = w[0] * pt[0] + w[1] * pt[1] + w[2] * pt[2];
+    tmpd = (1. - costheta) * (pt[0] * wd[0] + w[0] * ptd[0] + pt[1] * wd[1] +
+                              w[1] * ptd[1] + pt[2] * wd[2] + w[2] * ptd[2]) -
+           temp * costhetad;
+    tmp = temp * (1. - costheta);
+    *rotatedPtd = 0.0;
+    for (i = 0; i < 3; ++i) {
+      rotatedPtd[i] = costheta * ptd[i] + pt[i] * costhetad +
+                      sintheta * w_cross_ptd[i] + w_cross_pt[i] * sinthetad +
+                      tmp * wd[i] + w[i] * tmpd;
       rotatedPt[i] = pt[i] * costheta + w_cross_pt[i] * sintheta + w[i] * tmp;
+    }
   } else {
     double rot_cross_pt[3];
-    cross_nodiff(rot, pt, rot_cross_pt);
-    for (i = 0; i < 3; ++i)
+    double rot_cross_ptd[3];
+    cross_d(rot, rotd, pt, ptd, rot_cross_pt, rot_cross_ptd);
+    *rotatedPtd = 0.0;
+    for (i = 0; i < 3; ++i) {
+      rotatedPtd[i] = ptd[i] + rot_cross_ptd[i];
       rotatedPt[i] = pt[i] + rot_cross_pt[i];
+    }
   }
 }
 
 /*
-  Differentiation of radial_distort in reverse (adjoint) mode:
-   gradient     of useful results: *rad_params *proj
+  Differentiation of radial_distort in forward (tangent) mode:
+   variations   of useful results: *proj
    with respect to varying inputs: *rad_params *proj
    Plus diff mem management of: rad_params:in proj:in
 */
-void radial_distort_b(const double *rad_params, double *rad_paramsb,
-                      double *proj, double *projb) {
+void radial_distort_d(const double *rad_params, const double *rad_paramsd,
+                      double *proj, double *projd) {
   double rsq, L;
-  double rsqb, Lb;
-  rsq = sqsum_nodiff(2, proj);
+  double rsqd, Ld;
+  rsqd = sqsum_d(2, proj, projd, &rsq);
+  Ld = rsq * rad_paramsd[0] + (rad_params[0] + rad_params[1] * 2 * rsq) * rsqd +
+       rsq * rsq * rad_paramsd[1];
   L = 1. + rad_params[0] * rsq + rad_params[1] * rsq * rsq;
-  pushReal8(proj[0]);
+  projd[0] = L * projd[0] + proj[0] * Ld;
   proj[0] = proj[0] * L;
-  Lb = proj[1] * projb[1];
-  projb[1] = L * projb[1];
-  popReal8(&(proj[0]));
-  Lb = Lb + proj[0] * projb[0];
-  projb[0] = L * projb[0];
-  rad_paramsb[0] = rad_paramsb[0] + rsq * Lb;
-  rsqb = (rad_params[1] * 2 * rsq + rad_params[0]) * Lb;
-  rad_paramsb[1] = rad_paramsb[1] + rsq * rsq * Lb;
-  sqsum_b(2, proj, projb, rsqb);
-}
-
-void radial_distort_nodiff(const double *rad_params, double *proj) {
-  double rsq, L;
-  rsq = sqsum_nodiff(2, proj);
-  L = 1. + rad_params[0] * rsq + rad_params[1] * rsq * rsq;
-  proj[0] = proj[0] * L;
+  projd[1] = L * projd[1] + proj[1] * Ld;
   proj[1] = proj[1] * L;
 }
 
 /*
-  Differentiation of project in reverse (adjoint) mode:
-   gradient     of useful results: *proj
+  Differentiation of project in forward (tangent) mode:
+   variations   of useful results: *proj
    with respect to varying inputs: *cam *X
    Plus diff mem management of: cam:in X:in proj:in
 */
-void project_b(const double *cam, double *camb, const double *X, double *Xb,
-               double *proj, double *projb) {
-  double *C = const_cast<double *>(&(cam[3]));
-  double *Cb = const_cast<double *>(&(camb[3]));
-  double Xo[3], Xcam[3];
-  double Xob[3], Xcamb[3];
-  int ii1;
-  double tempb;
-  double tempb0;
-  for (ii1 = 0; ii1 < BA_NCAMPARAMS; ii1++) /* TFIX */
-    camb[ii1] = 0.0;
-  for (ii1 = 0; ii1 < 3; ii1++)
-    Xb[ii1] = 0.0;
-  Xo[0] = X[0] - C[0];
-  Xo[1] = X[1] - C[1];
-  Xo[2] = X[2] - C[2];
-  rodrigues_rotate_point_nodiff(&(cam[0]), Xo, Xcam);
-  proj[0] = Xcam[0] / Xcam[2];
-  proj[1] = Xcam[1] / Xcam[2];
-  pushReal8Array(proj, 2); /* TFIX */
-  radial_distort_nodiff(&(cam[9]), proj);
-  pushReal8(proj[0]);
-  proj[0] = proj[0] * cam[6] + cam[7];
-  camb[6] = camb[6] + proj[1] * projb[1];
-  camb[8] = camb[8] + projb[1];
-  projb[1] = cam[6] * projb[1];
-  popReal8(&(proj[0]));
-  camb[6] = camb[6] + proj[0] * projb[0];
-  camb[7] = camb[7] + projb[0];
-  projb[0] = cam[6] * projb[0];
-  popReal8Array(proj, 2); /* TFIX */
-  radial_distort_b(&(cam[9]), &(camb[9]), proj, projb);
-  for (ii1 = 0; ii1 < 3; ++ii1)
-    Xcamb[ii1] = 0.0;
-  tempb = projb[1] / Xcam[2];
-  Xcamb[1] = Xcamb[1] + tempb;
-  Xcamb[2] = Xcamb[2] - Xcam[1] * tempb / Xcam[2];
-  projb[1] = 0.0;
-  tempb0 = projb[0] / Xcam[2];
-  Xcamb[0] = Xcamb[0] + tempb0;
-  Xcamb[2] = Xcamb[2] - Xcam[0] * tempb0 / Xcam[2];
-  rodrigues_rotate_point_b(&(cam[0]), &(camb[0]), Xo, Xob, Xcam, Xcamb);
-  Xb[2] = Xb[2] + Xob[2];
-  Cb[2] = Cb[2] - Xob[2];
-  Xob[2] = 0.0;
-  Xb[1] = Xb[1] + Xob[1];
-  Cb[1] = Cb[1] - Xob[1];
-  Xob[1] = 0.0;
-  Xb[0] = Xb[0] + Xob[0];
-  Cb[0] = Cb[0] - Xob[0];
-}
-
-void project_nodiff(const double *cam, const double *X, double *proj) {
+void project_d(const double *__restrict cam, const double *__restrict camd,
+               const double *__restrict X, const double *__restrict Xd,
+               double *__restrict proj, double *__restrict projd) {
   const double *C = &(cam[3]);
+  const double *Cd = &(camd[3]);
   double Xo[3], Xcam[3];
+  double Xod[3], Xcamd[3];
+  int ii1;
+  double temp;
+  for (ii1 = 0; ii1 < 3; ++ii1)
+    Xod[ii1] = 0.0;
+  Xod[0] = Xd[0] - Cd[0];
   Xo[0] = X[0] - C[0];
+  Xod[1] = Xd[1] - Cd[1];
   Xo[1] = X[1] - C[1];
+  Xod[2] = Xd[2] - Cd[2];
   Xo[2] = X[2] - C[2];
-  rodrigues_rotate_point_nodiff(&(cam[0]), Xo, Xcam);
-  proj[0] = Xcam[0] / Xcam[2];
-  proj[1] = Xcam[1] / Xcam[2];
-  radial_distort_nodiff(&(cam[9]), proj);
+  rodrigues_rotate_point_d(&(cam[0]), &(camd[0]), Xo, Xod, Xcam, Xcamd);
+  *projd = 0.0;
+  temp = Xcam[0] / Xcam[2];
+  projd[0] = (Xcamd[0] - temp * Xcamd[2]) / Xcam[2];
+  proj[0] = temp;
+  temp = Xcam[1] / Xcam[2];
+  projd[1] = (Xcamd[1] - temp * Xcamd[2]) / Xcam[2];
+  proj[1] = temp;
+  radial_distort_d(&(cam[9]), &(camd[9]), proj, projd);
+  projd[0] = cam[6] * projd[0] + proj[0] * camd[6] + camd[7];
   proj[0] = proj[0] * cam[6] + cam[7];
+  projd[1] = cam[6] * projd[1] + proj[1] * camd[6] + camd[8];
   proj[1] = proj[1] * cam[6] + cam[8];
 }
 
 /*
-  Differentiation of compute_reproj_error in reverse (adjoint) mode:
-   gradient     of useful results: *err
-   with respect to varying inputs: *err *w *cam *X
-   RW status of diff variables: *err:in-out *w:out *cam:out *X:out
+  Differentiation of compute_reproj_error in forward (tangent) mode:
+   variations   of useful results: *err
+   with respect to varying inputs: *w *cam *X
+   RW status of diff variables: err:(loc) *err:out w:(loc) *w:in
+                cam:(loc) *cam:in X:(loc) *X:in
    Plus diff mem management of: err:in w:in cam:in X:in
 */
 // cam: 11 camera in format [r1 r2 r3 C1 C2 C3 f u0 v0 k1 k2]
@@ -538,37 +406,33 @@ void project_nodiff(const double *cam, const double *X, double *proj) {
 // distorted = radial_distort(projective2euclidean(Xcam), radial_parameters)
 // proj = distorted * f + principal_point
 // err = sqsum(proj - measurement)
-void compute_reproj_error_b(const double *cam, double *camb, const double *X,
-                            double *Xb, const double *w, double *wb,
-                            const double *feat, double *err, double *errb) {
+void compute_reproj_error_d(const double *__restrict cam,
+                            double *__restrict camd, const double *__restrict X,
+                            double *__restrict Xd, const double *__restrict w,
+                            double *__restrict wd,
+                            const double *__restrict feat,
+                            double *__restrict err, double *__restrict errd) {
   double proj[2];
-  double projb[2];
-  int ii1;
-  pushReal8Array(proj, 2);
-  project_nodiff(cam, X, proj);
-  for (ii1 = 0; ii1 < 2; ++ii1)
-    projb[ii1] = 0.0;
-  *wb = (proj[1] - feat[1]) * errb[1];
-  projb[1] = projb[1] + (*w) * errb[1];
-  errb[1] = 0.0;
-  *wb = *wb + (proj[0] - feat[0]) * errb[0];
-  projb[0] = projb[0] + (*w) * errb[0];
-  errb[0] = 0.0;
-  popReal8Array(proj, 2);
-  project_b(cam, camb, X, Xb, proj, projb);
+  double projd[2];
+  project_d(cam, camd, X, Xd, proj, projd);
+  *errd = 0.0;
+  errd[0] = (proj[0] - feat[0]) * (*wd) + (*w) * projd[0];
+  err[0] = (*w) * (proj[0] - feat[0]);
+  errd[1] = (proj[1] - feat[1]) * (*wd) + (*w) * projd[1];
+  err[1] = (*w) * (proj[1] - feat[1]);
 }
 
 /*
-  Differentiation of compute_zach_weight_error in reverse (adjoint) mode:
-   gradient     of useful results: *err
-   with respect to varying inputs: *err *w
-   RW status of diff variables: *err:in-out *w:out
+  Differentiation of compute_zach_weight_error in forward (tangent) mode:
+   variations   of useful results: *err
+   with respect to varying inputs: *w
+   RW status of diff variables: err:(loc) *err:out w:(loc) *w:in
    Plus diff mem management of: err:in w:in
 */
-void compute_zach_weight_error_b(const double *w, double *wb, double *err,
-                                 double *errb) {
-  *wb = -(2 * (*w) * (*errb));
-  *errb = 0.0;
+void compute_zach_weight_error_d(const double *w, double *wd, double *err,
+                                 double *errd) {
+  *errd = -(2 * (*w) * (*wd));
+  *err = 1 - (*w) * (*w);
 }
 }
 
@@ -772,14 +636,15 @@ void adept_compute_reproj_error(double const *cam, double *dcam,
 
   adeptTest::computeReprojError(acam, aX, &aw, feat, areproj_err);
 
-  for (unsigned i = 0; i < 2; i++)
-    areproj_err[i].set_gradient(derr[i]);
+  adept::set_gradients(acam, BA_NCAMPARAMS, dcam);
 
-  stack.compute_adjoint();
+  adept::set_gradients(aX, 3, dX);
 
-  *wb = aw.get_gradient();
-  adept::get_gradients(aX, 3, dX);
-  adept::get_gradients(acam, BA_NCAMPARAMS, dcam);
+  aw.set_gradient(*wb);
+
+  stack.compute_tangent_linear();
+
+  adept::get_gradients(areproj_err, 2, derr);
 }
 
 void adept_compute_zach_weight_error(double const *w, double *dw, double *err,
@@ -793,8 +658,9 @@ void adept_compute_zach_weight_error(double const *w, double *dw, double *err,
 
   stack.new_recording();
   adeptTest::computeZachWeightError(&aw, &aw_err);
-  aw_err.set_gradient(1.);
-  stack.compute_adjoint();
+  aw.set_gradient(1.0);
 
-  *dw = aw.get_gradient();
+  stack.compute_tangent_linear();
+
+  *derr = aw_err.get_gradient();
 }

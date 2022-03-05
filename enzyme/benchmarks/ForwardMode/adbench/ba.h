@@ -115,12 +115,12 @@ void dcompute_reproj_error(double const *cam, double *dcam, double const *X,
 void dcompute_zach_weight_error(double const *w, double *dw, double *err,
                                 double *derr);
 
-void compute_reproj_error_b(double const *cam, double *dcam, double const *X,
-                            double *dX, double const *w, double *wb,
-                            double const *feat, double *err, double *derr);
+void compute_reproj_error_d(const double *cam, double *camd, const double *X,
+                            double *Xd, const double *w, double *wd,
+                            const double *feat, double *err, double *errd);
 
-void compute_zach_weight_error_b(double const *w, double *dw, double *err,
-                                 double *derr);
+void compute_zach_weight_error_d(const double *w, double *wd, double *err,
+                                 double *errd);
 
 void adept_compute_reproj_error(double const *cam, double *dcam,
                                 double const *X, double *dX, double const *w,
@@ -303,7 +303,7 @@ int main(const int argc, const char *argv[]) {
       {
         struct timeval start, end;
         gettimeofday(&start, NULL);
-        calculate_jacobian<compute_reproj_error_b, compute_zach_weight_error_b>(
+        calculate_jacobian<compute_reproj_error_d, compute_zach_weight_error_d>(
             input, result);
         gettimeofday(&end, NULL);
         printf("Tapenade combined %0.6f\n", tdiff(&start, &end));
