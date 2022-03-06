@@ -59,9 +59,9 @@ double afoobar_and_gradient(double xin, double &xgrad, uint64_t iters) {
   adouble x = xin;
   stack.new_recording();
   adouble y = afoobar(x, iters);
-  y.set_gradient(1.0);
-  stack.compute_adjoint();
-  xgrad = x.get_gradient();
+  x.set_gradient(1.0);
+  stack.compute_tangent_linear();
+  xgrad = y.get_gradient();
   return y.value();
 }
 

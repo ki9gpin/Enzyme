@@ -5,7 +5,7 @@
 #include <string.h>
 #include <sys/time.h>
 
-template <typename Return, typename... T> Return __enzyme_autodiff(T...);
+template <typename Return, typename... T> Return __enzyme_fwddiff(T...);
 
 static float tdiff(struct timeval *start, struct timeval *end) {
   return (end->tv_sec - start->tv_sec) + 1e-6 * (end->tv_usec - start->tv_usec);
@@ -75,7 +75,7 @@ static void enzyme_sincos(double inp, uint64_t iters) {
     gettimeofday(&start, NULL);
     double res2;
 
-    res2 = __enzyme_autodiff<double>(foobar, inp, iters);
+    res2 = __enzyme_fwddiff<double>(foobar, inp, 1.0, iters);
 
     gettimeofday(&end, NULL);
     printf("Enzyme combined %0.6f res'=%f\n", tdiff(&start, &end), res2);
