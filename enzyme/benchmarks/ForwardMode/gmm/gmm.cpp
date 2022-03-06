@@ -208,7 +208,7 @@ void gmm_objective(int d, int k, int n, double const *__restrict alphas,
 extern int enzyme_const;
 extern int enzyme_dup;
 extern int enzyme_dupnoneed;
-void __enzyme_autodiff(...) noexcept;
+void __enzyme_fwddiff(...) noexcept;
 
 // *      tapenade -b -o gmm_tapenade -head "gmm_objective(err)/(alphas means
 // icf)" gmm.c
@@ -216,21 +216,19 @@ void dgmm_objective(int d, int k, int n, const double *alphas, double *alphasb,
                     const double *means, double *meansb, const double *icf,
                     double *icfb, const double *x, Wishart wishart, double *err,
                     double *errb) {
-  __enzyme_autodiff(gmm_objective, enzyme_const, d, enzyme_const, k,
-                    enzyme_const, n, enzyme_dup, alphas, alphasb, enzyme_dup,
-                    means, meansb, enzyme_dup, icf, icfb, enzyme_const, x,
-                    enzyme_const, wishart, enzyme_dupnoneed, err, errb);
+  __enzyme_fwddiff(gmm_objective, enzyme_const, d, enzyme_const, k,
+                   enzyme_const, n, enzyme_dup, alphas, alphasb, enzyme_dup,
+                   means, meansb, enzyme_dup, icf, icfb, enzyme_const, x,
+                   enzyme_const, wishart, enzyme_dupnoneed, err, errb);
 }
 }
 
 // ! Tapenade
 extern "C" {
 
-#include <adBuffer.h>
-
 /*
-  Differentiation of arr_max in reverse (adjoint) mode:
-   gradient     of useful results: *x arr_max
+  Differentiation of arr_max in forward (tangent) mode:
+   variations   of useful results: arr_max
    with respect to varying inputs: *x
    Plus diff mem management of: x:in
 
@@ -238,427 +236,271 @@ extern "C" {
                                 UTILS
  ==================================================================== */
 // This throws error on n<1
-void arr_max_b(int n, const double *x, double *xb, double arr_maxb) {
+double arr_max_d(int n, const double *x, const double *xd, double *arr_max) {
   int i;
   double m = x[0];
-  double mb = 0.0;
-  int branch;
-  double arr_max;
+  double md = xd[0];
   for (i = 1; i < n; ++i)
     if (m < x[i]) {
+      md = xd[i];
       m = x[i];
-      pushControl1b(1);
-    } else
-      pushControl1b(0);
-  mb = arr_maxb;
-  for (i = n - 1; i > 0; --i) {
-    popControl1b(&branch);
-    if (branch != 0) {
-      xb[i] = xb[i] + mb;
-      mb = 0.0;
     }
-  }
-  xb[0] = xb[0] + mb;
-}
-
-/* ====================================================================
-                                UTILS
- ==================================================================== */
-// This throws error on n<1
-double arr_max_nodiff(int n, const double *x) {
-  int i;
-  double m = x[0];
-  for (i = 1; i < n; ++i)
-    if (m < x[i])
-      m = x[i];
-  return m;
+  *arr_max = m;
+  return md;
 }
 
 /*
-  Differentiation of sqnorm in reverse (adjoint) mode:
-   gradient     of useful results: *x sqnorm
+  Differentiation of sqnorm in forward (tangent) mode:
+   variations   of useful results: sqnorm
    with respect to varying inputs: *x
    Plus diff mem management of: x:in
 */
 // sum of component squares
-void sqnorm_b(int n, const double *x, double *xb, double sqnormb) {
+double sqnorm_d(int n, const double *x, const double *xd, double *sqnorm) {
   int i;
   double res = x[0] * x[0];
-  double resb = 0.0;
-  double sqnorm;
-  resb = sqnormb;
-  for (i = n - 1; i > 0; --i)
-    xb[i] = xb[i] + 2 * x[i] * resb;
-  xb[0] = xb[0] + 2 * x[0] * resb;
-}
-
-// sum of component squares
-double sqnorm_nodiff(int n, const double *x) {
-  int i;
-  double res = x[0] * x[0];
-  for (i = 1; i < n; ++i)
+  double resd = 2 * x[0] * xd[0];
+  for (i = 1; i < n; ++i) {
+    resd = resd + 2 * x[i] * xd[i];
     res = res + x[i] * x[i];
-  return res;
+  }
+  *sqnorm = res;
+  return resd;
 }
 
 /*
-  Differentiation of subtract in reverse (adjoint) mode:
-   gradient     of useful results: *out *y
+  Differentiation of subtract in forward (tangent) mode:
+   variations   of useful results: *out
    with respect to varying inputs: *out *y
    Plus diff mem management of: out:in y:in
 */
 // out = a - b
-void subtract_b(int d, const double *x, const double *y, double *yb,
-                double *out, double *outb) {
+void subtract_d(int d, const double *x, const double *y, const double *yd,
+                double *out, double *outd) {
   int id;
-  for (id = d - 1; id > -1; --id) {
-    yb[id] = yb[id] - outb[id];
-    outb[id] = 0.0;
-  }
-}
-
-// out = a - b
-void subtract_nodiff(int d, const double *x, const double *y, double *out) {
-  int id;
-  for (id = 0; id < d; ++id)
+  for (id = 0; id < d; ++id) {
+    outd[id] = -yd[id];
     out[id] = x[id] - y[id];
+  }
 }
 
 /*
-  Differentiation of log_sum_exp in reverse (adjoint) mode:
-   gradient     of useful results: *x log_sum_exp
+  Differentiation of log_sum_exp in forward (tangent) mode:
+   variations   of useful results: log_sum_exp
    with respect to varying inputs: *x
    Plus diff mem management of: x:in
 */
-void log_sum_exp_b(int n, const double *x, double *xb, double log_sum_expb) {
+double log_sum_exp_d(int n, const double *x, const double *xd,
+                     double *log_sum_exp) {
   int i;
   double mx;
-  double mxb;
-  double tempb;
-  double log_sum_exp;
-  mx = arr_max_nodiff(n, x);
+  double mxd;
+  mxd = arr_max_d(n, x, xd, &mx);
   double semx = 0.0;
-  double semxb = 0.0;
-  for (i = 0; i < n; ++i)
+  double semxd;
+  semxd = 0.0;
+  for (i = 0; i < n; ++i) {
+    semxd = semxd + exp(x[i] - mx) * (xd[i] - mxd);
     semx = semx + exp(x[i] - mx);
-  semxb = log_sum_expb / semx;
-  mxb = log_sum_expb;
-  for (i = n - 1; i > -1; --i) {
-    tempb = exp(x[i] - mx) * semxb;
-    xb[i] = xb[i] + tempb;
-    mxb = mxb - tempb;
   }
-  arr_max_b(n, x, xb, mxb);
+  *log_sum_exp = log(semx) + mx;
+  return semxd / semx + mxd;
 }
 
-double log_sum_exp_nodiff(int n, const double *x) {
-  int i;
-  double mx;
-  mx = arr_max_nodiff(n, x);
-  double semx = 0.0;
-  for (i = 0; i < n; ++i)
-    semx = semx + exp(x[i] - mx);
-  return log(semx) + mx;
-}
-
-double log_gamma_distrib_nodiff(double a, double p) {
+double log_gamma_distrib_c(double a, double p) {
   int j;
-  /* TFIX */
   double out = 0.25 * p * (p - 1) * log(PI);
-  double arg1;
-  float result1;
+  double result1;
   for (j = 1; j < p + 1; ++j) {
-    arg1 = a + 0.5 * (1 - j);
-    result1 = lgamma(arg1);
+    result1 = lgamma(a + 0.5 * (1 - j));
     out = out + result1;
   }
   return out;
 }
 
 /*
-  Differentiation of log_wishart_prior in reverse (adjoint) mode:
-   gradient     of useful results: log_wishart_prior
+  Differentiation of log_wishart_prior in forward (tangent) mode:
+   variations   of useful results: log_wishart_prior
    with respect to varying inputs: *Qdiags *sum_qs *icf
    Plus diff mem management of: Qdiags:in sum_qs:in icf:in
 
  ========================================================================
                                 MAIN LOGIC
  ======================================================================== */
-void log_wishart_prior_b(int p, int k, Wishart wishart, const double *sum_qs,
-                         double *sum_qsb, const double *Qdiags, double *Qdiagsb,
-                         const double *icf, double *icfb,
-                         double log_wishart_priorb) {
+double log_wishart_prior_d(int p, int k, Wishart wishart, const double *sum_qs,
+                           const double *sum_qsd, const double *Qdiags,
+                           const double *Qdiagsd, const double *icf,
+                           const double *icfd, double *log_wishart_prior) {
   int ik;
   int n = p + wishart.m + 1;
   int icf_sz = p * (p + 1) / 2;
   double C;
-  float arg1;
   double result1;
-  double out = 0;
-  double outb = 0.0;
-  double log_wishart_prior;
-  for (ik = 0; ik < k; ++ik) {
-    double frobenius;
-    double result1;
-    int arg1;
-    double result2;
-  }
-  outb = log_wishart_priorb;
-  for (ik = 0; ik < k * p; ik++) /* TFIX */
-    Qdiagsb[ik] = 0.0;
-  for (ik = 0; ik < k; ik++) /* TFIX */
-    sum_qsb[ik] = 0.0;
-  for (ik = 0; ik < k * icf_sz; ik++) /* TFIX */
-    icfb[ik] = 0.0;
-  for (ik = k - 1; ik > -1; --ik) {
-    double frobenius;
-    double frobeniusb;
-    double result1;
-    double result1b;
-    int arg1;
-    double result2;
-    double result2b;
-    frobeniusb = wishart.gamma * wishart.gamma * 0.5 * outb;
-    sum_qsb[ik] = sum_qsb[ik] - wishart.m * outb;
-    result1b = frobeniusb;
-    result2b = frobeniusb;
-    arg1 = icf_sz - p;
-    sqnorm_b(arg1, &(icf[ik * icf_sz + p]), &(icfb[ik * icf_sz + p]), result2b);
-    sqnorm_b(p, &(Qdiags[ik * p]), &(Qdiagsb[ik * p]), result1b);
-  }
-}
-
-/* ========================================================================
-                                MAIN LOGIC
- ======================================================================== */
-double log_wishart_prior_nodiff(int p, int k, Wishart wishart,
-                                const double *sum_qs, const double *Qdiags,
-                                const double *icf) {
-  int ik;
-  int n = p + wishart.m + 1;
-  int icf_sz = p * (p + 1) / 2;
-  double C;
-  float arg1;
-  double result1;
-  arg1 = 0.5 * n;
-  result1 = log_gamma_distrib_nodiff(arg1, p);
+  result1 = log_gamma_distrib_c(0.5 * n, p);
   C = n * p * (log(wishart.gamma) - 0.5 * log(2)) - result1;
   double out = 0;
+  double outd;
+  outd = 0.0;
   for (ik = 0; ik < k; ++ik) {
     double frobenius;
+    double frobeniusd;
     double result1;
-    int arg1;
+    double result1d;
     double result2;
-    result1 = sqnorm_nodiff(p, &(Qdiags[ik * p]));
-    arg1 = icf_sz - p;
-    result2 = sqnorm_nodiff(arg1, &(icf[ik * icf_sz + p]));
+    double result2d;
+    result1d = sqnorm_d(p, &(Qdiags[ik * p]), &(Qdiagsd[ik * p]), &result1);
+    result2d = sqnorm_d(icf_sz - p, &(icf[ik * icf_sz + p]),
+                        &(icfd[ik * icf_sz + p]), &result2);
+    frobeniusd = result1d + result2d;
     frobenius = result1 + result2;
+    outd = outd + wishart.gamma * wishart.gamma * 0.5 * frobeniusd -
+           wishart.m * sum_qsd[ik];
     out = out + 0.5 * wishart.gamma * wishart.gamma * frobenius -
           wishart.m * sum_qs[ik];
   }
-  return out - k * C;
+  *log_wishart_prior = out - k * C;
+  return outd;
 }
 
 /*
-  Differentiation of preprocess_qs in reverse (adjoint) mode:
-   gradient     of useful results: *Qdiags *sum_qs *icf
+  Differentiation of preprocess_qs in forward (tangent) mode:
+   variations   of useful results: *Qdiags *sum_qs
    with respect to varying inputs: *icf
    Plus diff mem management of: Qdiags:in sum_qs:in icf:in
 */
-void preprocess_qs_b(int d, int k, const double *icf, double *icfb,
-                     double *sum_qs, double *sum_qsb, double *Qdiags,
-                     double *Qdiagsb) {
+void preprocess_qs_d(int d, int k, const double *icf, const double *icfd,
+                     double *sum_qs, double *sum_qsd, double *Qdiags,
+                     double *Qdiagsd) {
   int ik, id;
   int icf_sz = d * (d + 1) / 2;
-  for (ik = 0; ik < k; ++ik)
-    for (id = 0; id < d; ++id) {
-      double q = icf[ik * icf_sz + id];
-      pushReal8(q);
-    }
-  for (ik = k - 1; ik > -1; --ik) {
-    for (id = d - 1; id > -1; --id) {
-      double q;
-      double qb = 0.0;
-      popReal8(&q);
-      qb = exp(q) * Qdiagsb[ik * d + id];
-      Qdiagsb[ik * d + id] = 0.0;
-      qb = qb + sum_qsb[ik];
-      icfb[ik * icf_sz + id] = icfb[ik * icf_sz + id] + qb;
-    }
-    sum_qsb[ik] = 0.0;
-  }
-}
-
-void preprocess_qs_nodiff(int d, int k, const double *icf, double *sum_qs,
-                          double *Qdiags) {
-  int ik, id;
-  int icf_sz = d * (d + 1) / 2;
+  *Qdiagsd = 0.0;
+  *sum_qsd = 0.0;
   for (ik = 0; ik < k; ++ik) {
+    sum_qsd[ik] = 0.0;
     sum_qs[ik] = 0.;
     for (id = 0; id < d; ++id) {
       double q = icf[ik * icf_sz + id];
+      double qd = icfd[ik * icf_sz + id];
+      sum_qsd[ik] = sum_qsd[ik] + qd;
       sum_qs[ik] = sum_qs[ik] + q;
+      Qdiagsd[ik * d + id] = exp(q) * qd;
       Qdiags[ik * d + id] = exp(q);
     }
   }
 }
 
 /*
-  Differentiation of Qtimesx in reverse (adjoint) mode:
-   gradient     of useful results: *out *Qdiag *x *ltri
+  Differentiation of Qtimesx in forward (tangent) mode:
+   variations   of useful results: *out
    with respect to varying inputs: *out *Qdiag *x *ltri
    Plus diff mem management of: out:in Qdiag:in x:in ltri:in
 */
-void Qtimesx_b(int d, const double *Qdiag, double *Qdiagb, const double *ltri,
-               double *ltrib, const double *x, double *xb, double *out,
-               double *outb) {
+void Qtimesx_d(int d, const double *Qdiag, const double *Qdiagd,
+               const double *ltri, const double *ltrid, const double *x,
+               const double *xd, double *out, double *outd) {
   // strictly lower triangular part
   int i, j;
-  int adFrom;
-  int Lparamsidx = 0;
   for (i = 0; i < d; ++i) {
-    adFrom = i + 1;
-    for (j = adFrom; j < d; ++j)
-      Lparamsidx++;
-    pushInteger4(adFrom);
-  }
-  for (i = d - 1; i > -1; --i) {
-    popInteger4(&adFrom);
-    for (j = d - 1; j > adFrom - 1; --j) {
-      --Lparamsidx;
-      ltrib[Lparamsidx] = ltrib[Lparamsidx] + x[i] * outb[j];
-      xb[i] = xb[i] + ltri[Lparamsidx] * outb[j];
-    }
-  }
-  for (i = d - 1; i > -1; --i) {
-    Qdiagb[i] = Qdiagb[i] + x[i] * outb[i];
-    xb[i] = xb[i] + Qdiag[i] * outb[i];
-    outb[i] = 0.0;
-  }
-}
-
-void Qtimesx_nodiff(int d, const double *Qdiag, const double *ltri,
-                    const double *x, double *out) {
-  // strictly lower triangular part
-  int i, j;
-  for (i = 0; i < d; ++i)
+    outd[i] = x[i] * Qdiagd[i] + Qdiag[i] * xd[i];
     out[i] = Qdiag[i] * x[i];
-  int Lparamsidx = 0;
-  for (i = 0; i < d; ++i)
+  }
+  // caching lparams as scev doesn't replicate index calculation
+  //  todo note changing to strengthened form
+  // int Lparamsidx = 0;
+  for (i = 0; i < d; ++i) {
+    int Lparamsidx = i * (2 * d - i - 1) / 2;
     for (j = i + 1; j < d; ++j) {
+      // and this x
+      outd[j] = outd[j] + x[i] * ltrid[Lparamsidx] + ltri[Lparamsidx] * xd[i];
       out[j] = out[j] + ltri[Lparamsidx] * x[i];
       Lparamsidx++;
     }
+  }
 }
 
 /*
-  Differentiation of gmm_objective in reverse (adjoint) mode:
-   gradient     of useful results: *err
-   with respect to varying inputs: *err *means *icf *alphas
-   RW status of diff variables: *err:in-out *means:out *icf:out
-                *alphas:out
+  Differentiation of gmm_objective in forward (tangent) mode:
+   variations   of useful results: *err
+   with respect to varying inputs: *means *icf *alphas
+   RW status of diff variables: err:(loc) *err:out means:(loc)
+                *means:in icf:(loc) *icf:in alphas:(loc) *alphas:in
    Plus diff mem management of: err:in means:in icf:in alphas:in
 */
-void gmm_objective_b(int d, int k, int n, const double *alphas, double *alphasb,
-                     const double *means, double *meansb, const double *icf,
-                     double *icfb, const double *x, Wishart wishart,
-                     double *err, double *errb) {
+void gmm_objective_d(int d, int k, int n, const double *__restrict alphas,
+                     double *__restrict alphasd, const double *__restrict means,
+                     double *__restrict meansd, const double *__restrict icf,
+                     double *__restrict icfd, const double *__restrict x,
+                     Wishart wishart, double *__restrict err,
+                     double *__restrict errd) {
   int ix, ik;
-  /* TFIX */
   const double CONSTANT = -n * d * 0.5 * log(2 * PI);
   int icf_sz = d * (d + 1) / 2;
   double *Qdiags;
-  double *Qdiagsb;
+  double *Qdiagsd;
   double result1;
-  double result1b;
-  int ii1;
-  Qdiagsb = (double *)malloc(d * k * sizeof(double));
-  for (ii1 = 0; ii1 < d * k; ++ii1)
-    Qdiagsb[ii1] = 0.0;
+  double result1d;
+  Qdiagsd = (double *)malloc(d * k * sizeof(double));
   Qdiags = (double *)malloc(d * k * sizeof(double));
   double *sum_qs;
-  double *sum_qsb;
-  sum_qsb = (double *)malloc(k * sizeof(double));
-  for (ii1 = 0; ii1 < k; ++ii1)
-    sum_qsb[ii1] = 0.0;
+  double *sum_qsd;
+  sum_qsd = (double *)malloc(k * sizeof(double));
   sum_qs = (double *)malloc(k * sizeof(double));
   double *xcentered;
-  double *xcenteredb;
-  xcenteredb = (double *)malloc(d * sizeof(double));
-  for (ii1 = 0; ii1 < d; ++ii1)
-    xcenteredb[ii1] = 0.0;
+  double *xcenteredd;
+  xcenteredd = (double *)malloc(d * sizeof(double));
   xcentered = (double *)malloc(d * sizeof(double));
   double *Qxcentered;
-  double *Qxcenteredb;
-  Qxcenteredb = (double *)malloc(d * sizeof(double));
-  for (ii1 = 0; ii1 < d; ++ii1)
-    Qxcenteredb[ii1] = 0.0;
+  double *Qxcenteredd;
+  Qxcenteredd = (double *)malloc(d * sizeof(double));
   Qxcentered = (double *)malloc(d * sizeof(double));
   double *main_term;
-  double *main_termb;
-  main_termb = (double *)malloc(k * sizeof(double));
-  for (ii1 = 0; ii1 < k; ++ii1)
-    main_termb[ii1] = 0.0;
+  double *main_termd;
+  main_termd = (double *)malloc(k * sizeof(double));
   main_term = (double *)malloc(k * sizeof(double));
-  preprocess_qs_nodiff(d, k, icf, &(sum_qs[0]), &(Qdiags[0]));
+  preprocess_qs_d(d, k, icf, icfd, &(sum_qs[0]), &(sum_qsd[0]), &(Qdiags[0]),
+                  &(Qdiagsd[0]));
   double slse = 0.;
-  double slseb = 0.0;
-  for (ix = 0; ix < n; ++ix)
+  double slsed;
+  slsed = 0.0;
+  for (ix = 0; ix < n; ++ix) {
     for (ik = 0; ik < k; ++ik) {
-      pushReal8Array(xcentered, d); /* TFIX */
-      subtract_nodiff(d, &(x[ix * d]), &(means[ik * d]), &(xcentered[0]));
-      pushReal8Array(Qxcentered, d); /* TFIX */
-      Qtimesx_nodiff(d, &(Qdiags[ik * d]), &(icf[ik * icf_sz + d]),
-                     &(xcentered[0]), &(Qxcentered[0]));
-      result1 = sqnorm_nodiff(d, &(Qxcentered[0]));
-      pushReal8(main_term[ik]);
+      subtract_d(d, &(x[ix * d]), &(means[ik * d]), &(meansd[ik * d]),
+                 &(xcentered[0]), &(xcenteredd[0]));
+      Qtimesx_d(d, &(Qdiags[ik * d]), &(Qdiagsd[ik * d]),
+                &(icf[ik * icf_sz + d]), &(icfd[ik * icf_sz + d]),
+                &(xcentered[0]), &(xcenteredd[0]), &(Qxcentered[0]),
+                &(Qxcenteredd[0]));
+      // two caches for qxcentered at idx 0 and at arbitrary index
+      result1d = sqnorm_d(d, &(Qxcentered[0]), &(Qxcenteredd[0]), &result1);
+      main_termd[ik] = alphasd[ik] + sum_qsd[ik] - 0.5 * result1d;
       main_term[ik] = alphas[ik] + sum_qs[ik] - 0.5 * result1;
     }
-  double lse_alphas;
-  double lse_alphasb;
-  slseb = *errb;
-  lse_alphasb = -(n * (*errb));
-  result1b = *errb;
-  *errb = 0.0;
-  log_wishart_prior_b(d, k, wishart, &(sum_qs[0]), &(sum_qsb[0]), &(Qdiags[0]),
-                      &(Qdiagsb[0]), icf, icfb, result1b);
-  for (ii1 = 0; ii1 < k; ii1++) /* TFIX */
-    alphasb[ii1] = 0.0;
-  log_sum_exp_b(k, alphas, alphasb, lse_alphasb);
-  for (ii1 = 0; ii1 < d * k; ii1++) /* TFIX */
-    meansb[ii1] = 0.0;
-  for (ix = n - 1; ix > -1; --ix) {
-    result1b = slseb;
-    log_sum_exp_b(k, &(main_term[0]), &(main_termb[0]), result1b);
-    for (ik = k - 1; ik > -1; --ik) {
-      popReal8(&(main_term[ik]));
-      alphasb[ik] = alphasb[ik] + main_termb[ik];
-      sum_qsb[ik] = sum_qsb[ik] + main_termb[ik];
-      result1b = -(0.5 * main_termb[ik]);
-      main_termb[ik] = 0.0;
-      sqnorm_b(d, &(Qxcentered[0]), &(Qxcenteredb[0]), result1b);
-      popReal8Array(Qxcentered, d); /* TFIX */
-      Qtimesx_b(d, &(Qdiags[ik * d]), &(Qdiagsb[ik * d]),
-                &(icf[ik * icf_sz + d]), &(icfb[ik * icf_sz + d]),
-                &(xcentered[0]), &(xcenteredb[0]), &(Qxcentered[0]),
-                &(Qxcenteredb[0]));
-      popReal8Array(xcentered, d); /* TFIX */
-      subtract_b(d, &(x[ix * d]), &(means[ik * d]), &(meansb[ik * d]),
-                 &(xcentered[0]), &(xcenteredb[0]));
-    }
+    // storing cmp for max of main_term
+    // 2 x (0 and arbitrary) storing sub to exp
+    // storing sum for use in log
+    result1d = log_sum_exp_d(k, &(main_term[0]), &(main_termd[0]), &result1);
+    slsed = slsed + result1d;
+    slse = slse + result1;
   }
-  preprocess_qs_b(d, k, icf, icfb, &(sum_qs[0]), &(sum_qsb[0]), &(Qdiags[0]),
-                  &(Qdiagsb[0]));
-  free(main_term);
-  free(main_termb);
-  free(Qxcentered);
-  free(Qxcenteredb);
-  free(xcentered);
-  free(xcenteredb);
-  free(sum_qs);
-  free(sum_qsb);
+  // storing cmp of alphas
+  double lse_alphas;
+  double lse_alphasd;
+  lse_alphasd = log_sum_exp_d(k, alphas, alphasd, &lse_alphas);
+  result1d =
+      log_wishart_prior_d(d, k, wishart, &(sum_qs[0]), &(sum_qsd[0]),
+                          &(Qdiags[0]), &(Qdiagsd[0]), icf, icfd, &result1);
+  *errd = slsed - n * lse_alphasd + result1d;
+  *err = CONSTANT + slse - n * lse_alphas + result1;
+  free(Qdiagsd);
   free(Qdiags);
-  free(Qdiagsb);
+  free(sum_qsd);
+  free(sum_qs);
+  free(xcenteredd);
+  free(xcentered);
+  free(Qxcenteredd);
+  free(Qxcentered);
+  free(main_termd);
+  free(main_term);
 }
 }
 
@@ -915,13 +757,14 @@ void adept_dgmm_objective(int d, int k, int n, const double *alphas,
   adouble aerr;
 
   adeptTest::gmm_objective(d, k, n, aalphas, ameans, aicf, x, wishart, &aerr);
-  aerr.set_gradient(1.); // only one J row here
 
-  stack.compute_adjoint();
+  adept::set_gradients(aalphas, k, alphasb);
+  adept::set_gradients(ameans, d * k, meansb);
+  adept::set_gradients(aicf, icf_sz * k, icfb);
 
-  adept::get_gradients(aalphas, k, alphasb);
-  adept::get_gradients(ameans, d * k, meansb);
-  adept::get_gradients(aicf, icf_sz * k, icfb);
+  stack.compute_tangent_linear();
+
+  *errb = aerr.get_gradient();
 
   delete[] aalphas;
   delete[] ameans;

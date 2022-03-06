@@ -35,7 +35,7 @@ void dgmm_objective(int d, int k, int n, const double *alphas, double *alphasb,
                     double *icfb, const double *x, Wishart wishart, double *err,
                     double *errb);
 
-void gmm_objective_b(int d, int k, int n, const double *alphas, double *alphasb,
+void gmm_objective_d(int d, int k, int n, const double *alphas, double *alphasb,
                      const double *means, double *meansb, const double *icf,
                      double *icfb, const double *x, Wishart wishart,
                      double *err, double *errb);
@@ -110,10 +110,14 @@ typedef void (*deriv_t)(int d, int k, int n, const double *alphas,
 
 template <deriv_t deriv>
 void calculate_jacobian(struct GMMInput &input, struct GMMOutput &result) {
-  double *alphas_gradient_part = result.gradient.data();
-  double *means_gradient_part = result.gradient.data() + input.alphas.size();
+  unsigned nparams =
+      input.alphas.size() + input.means.size() + input.icf.size();
+  std::vector<double> params(nparams);
+
+  double *alphas_gradient_part = params.data();
+  double *means_gradient_part = params.data() + input.alphas.size();
   double *icf_gradient_part =
-      result.gradient.data() + input.alphas.size() + input.means.size();
+      params.data() + input.alphas.size() + input.means.size();
 
   double tmp =
       0.0; // stores fictive result
@@ -122,9 +126,17 @@ void calculate_jacobian(struct GMMInput &input, struct GMMOutput &result) {
   double errb = 1.0; // stores dY
                      // (equals to 1.0 for gradient calculation)
 
-  deriv(input.d, input.k, input.n, input.alphas.data(), alphas_gradient_part,
-        input.means.data(), means_gradient_part, input.icf.data(),
-        icf_gradient_part, input.x.data(), input.wishart, &tmp, &errb);
+  for (unsigned n = 0; n < nparams; ++n) {
+    params[n] = 1.0;
+
+    double *dparams = result.gradient.data() + n;
+
+    deriv(input.d, input.k, input.n, input.alphas.data(), alphas_gradient_part,
+          input.means.data(), means_gradient_part, input.icf.data(),
+          icf_gradient_part, input.x.data(), input.wishart, &tmp, dparams);
+
+    params[n] = 0.0;
+  }
 }
 
 int main(const int argc, const char *argv[]) {
@@ -160,7 +172,7 @@ int main(const int argc, const char *argv[]) {
       {
         struct timeval start, end;
         gettimeofday(&start, NULL);
-        calculate_jacobian<gmm_objective_b>(input, result);
+        calculate_jacobian<gmm_objective_d>(input, result);
         gettimeofday(&end, NULL);
         printf("Tapenade combined %0.6f\n", tdiff(&start, &end));
         for (unsigned i = 0; i < 5; i++) {
