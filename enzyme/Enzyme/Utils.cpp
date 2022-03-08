@@ -106,6 +106,7 @@ Function *getOrInsertDifferentialFloatMemcpy(Module &M, Type *elementType,
   F->setLinkage(Function::LinkageTypes::InternalLinkage);
   F->addFnAttr(Attribute::ArgMemOnly);
   F->addFnAttr(Attribute::NoUnwind);
+  F->addFnAttr(Attribute::AlwaysInline);
   F->addParamAttr(0, Attribute::NoCapture);
   F->addParamAttr(1, Attribute::NoCapture);
 
@@ -208,6 +209,7 @@ Function *getOrInsertMemcpyStrided(Module &M, PointerType *T, Type *IT,
   F->setLinkage(Function::LinkageTypes::InternalLinkage);
   F->addFnAttr(Attribute::ArgMemOnly);
   F->addFnAttr(Attribute::NoUnwind);
+  F->addFnAttr(Attribute::AlwaysInline);
   F->addParamAttr(0, Attribute::NoCapture);
   F->addParamAttr(1, Attribute::NoCapture);
   F->addParamAttr(0, Attribute::WriteOnly);
@@ -333,6 +335,7 @@ Function *getOrInsertCheckedFree(Module &M, CallInst *call, Type *Ty,
   F->setLinkage(Function::LinkageTypes::InternalLinkage);
   F->addFnAttr(Attribute::ArgMemOnly);
   F->addFnAttr(Attribute::NoUnwind);
+  F->addFnAttr(Attribute::AlwaysInline);
 
   BasicBlock *entry = BasicBlock::Create(M.getContext(), "entry", F);
   BasicBlock *free0 = BasicBlock::Create(M.getContext(), "free0", F);
@@ -636,6 +639,7 @@ llvm::Value *getOrInsertOpFloatSum(llvm::Module &M, llvm::Type *OpPtr,
   F->setLinkage(Function::LinkageTypes::InternalLinkage);
   F->addFnAttr(Attribute::ArgMemOnly);
   F->addFnAttr(Attribute::NoUnwind);
+  F->addFnAttr(Attribute::AlwaysInline);
   F->addParamAttr(0, Attribute::NoCapture);
   F->addParamAttr(0, Attribute::ReadOnly);
   F->addParamAttr(1, Attribute::NoCapture);
