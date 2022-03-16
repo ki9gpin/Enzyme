@@ -8774,12 +8774,6 @@ public:
           auto cal2 =
               Builder2.CreateCall(mul, {prim[0], prim[1], diff[2], diff[3]});
 
-          Builder2.CreateExtractValue(cal1, {0});
-          Builder2.CreateExtractValue(cal1, {1});
-
-          Builder2.CreateExtractValue(cal2, {0});
-          Builder2.CreateExtractValue(cal2, {1});
-
           Value *resReal =
               Builder2.CreateFAdd(Builder2.CreateExtractValue(cal1, {0}),
                                   Builder2.CreateExtractValue(cal2, {0}));
@@ -8789,8 +8783,7 @@ public:
 
           Value *res = Builder2.CreateInsertValue(
               UndefValue::get(call.getType()), resReal, {0});
-          res = Builder2.CreateInsertValue(UndefValue::get(call.getType()),
-                                           resImag, {1});
+          res = Builder2.CreateInsertValue(res, resImag, {1});
 
           setDiffe(&call, res, Builder2);
           break;
