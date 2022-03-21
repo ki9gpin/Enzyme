@@ -8757,6 +8757,9 @@ public:
                           gutils->getNewFromOriginal(orig_op2),
                           gutils->getNewFromOriginal(orig_op3)};
 
+        auto mul = gutils->oldFunc->getParent()->getOrInsertFunction(
+            funcName, called->getFunctionType(), called->getAttributes());
+
         switch (Mode) {
         case DerivativeMode::ForwardMode:
         case DerivativeMode::ForwardModeSplit: {
@@ -8772,9 +8775,6 @@ public:
                            : diffe(orig_op2, Builder2),
               constantval3 ? Constant::getNullValue(orig_op3->getType())
                            : diffe(orig_op3, Builder2)};
-
-          auto mul = gutils->oldFunc->getParent()->getOrInsertFunction(
-              funcName, called->getFunctionType(), called->getAttributes());
 
           auto cal1 =
               Builder2.CreateCall(mul, {diff[0], diff[1], prim[2], prim[3]});
@@ -8793,14 +8793,32 @@ public:
           res = Builder2.CreateInsertValue(res, resImag, {1});
 
           setDiffe(&call, res, Builder2);
-          break;
+          return;
         }
         case DerivativeMode::ReverseModeGradient:
         case DerivativeMode::ReverseModeCombined: {
           IRBuilder<> Builder2(call.getParent());
           getReverseBuilder(Builder2);
 
-          break;
+          Value *idiff = diffe(&call, Builder2);
+          Value *idiffReal = Builder2.CreateExtractValue(idiff, {0});
+          Value *idiffImag = Builder2.CreateExtractValue(idiff, {1});
+
+          Value *diff0 = nullptr;
+          Value *diff1 = nullptr;
+
+          diff0 = Builder2.CreateCall(mul,
+                                      {idiffReal, idiffImag, prim[2], prim[3]});
+          diff1 = Builder2.CreateCall(mul,
+                                      {prim[0], prim[1], idiffReal, idiffImag});
+
+          if (diff0)
+            addToDiffe(orig_op0, diff0, Builder2, call.getType());
+
+          if (diff1)
+            addToDiffe(orig_op1, diff1, Builder2, call.getType());
+
+          return;
         }
         case DerivativeMode::ReverseModePrimal:
           return;
@@ -8887,14 +8905,14 @@ public:
                     Builder2.CreateExtractValue(sq1, {1})});
 
           setDiffe(&call, div1, Builder2);
-          break;
+          return;
         }
         case DerivativeMode::ReverseModeGradient:
         case DerivativeMode::ReverseModeCombined: {
           IRBuilder<> Builder2(call.getParent());
           getReverseBuilder(Builder2);
 
-          break;
+          return;
         }
         case DerivativeMode::ReverseModePrimal:;
           return;
@@ -8915,11 +8933,11 @@ public:
           getForwardBuilder(Builder2);
           setDiffe(&call, Constant::getNullValue(orig_op0->getType()),
                    Builder2);
-          break;
+          return;
         }
         case DerivativeMode::ReverseModeGradient:
         case DerivativeMode::ReverseModeCombined: {
-          break;
+          return;
         }
         case DerivativeMode::ReverseModePrimal:;
           return;
@@ -8961,7 +8979,7 @@ public:
           diff = Builder2.CreateFAdd(diff, cal2);
 
           setDiffe(&call, diff, Builder2);
-          break;
+          return;
         }
         case DerivativeMode::ReverseModeGradient:
         case DerivativeMode::ReverseModeCombined: {
@@ -8983,7 +9001,7 @@ public:
             addToDiffe(orig_op0, diff, Builder2, call.getType());
           }
 
-          break;
+          return;
         }
         case DerivativeMode::ReverseModePrimal:;
           return;
